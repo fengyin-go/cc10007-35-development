@@ -59,7 +59,35 @@ npm run build
 | 存储治理 | `govern` | 治理策略 | 策略编号、目标表名、治理类型 |
 | 任务监控 | `monitor` | 监控配置 | 配置编号、关联任务、监控指标 |
 | 变更审计 | `audit` | 审计记录 | 记录编号、操作表名、变更类型 |
-| 编目检索 | `catalog` | 编目条目 | 条目编号、数据集名称、所属分层 |
+| 编目检索 | `catalog` | 编目条目 / 目录护照 | 条目编号、数据集名称、所属分层、目录护照 |
+
+## 目录护照（编目检索）
+
+编目检索页在通用条目管理之上承载「目录护照」能力：catalog hit 可按 `name`、`layer`、`tag`、
+`path` 钻取到一本护照，护照把三类证据与编目条目钉在一起。
+
+- **field_rev 字段修订卡**：分「语义不兼容」（口径/类型不兼容，影响下游契约）与「label-only」
+  （仅展示名/注释变化，码值与语义不变）两类，卡片带 schema 字段定义溯源编号。
+- **ADS release**：记录应用层发布与 `output_contract`（含版本），契约随护照版本走。
+- **QUAL ruling**：质量规则裁定，结论分通过 / 阻断 / 观察，带 quality 规则溯源编号。
+
+一致性规则（实现集中在 `frontend/src/api/passport-service.ts`）：
+
+1. **同笔签收**：CAT 的 issue / revise / retire 与 field_rev、ADS、QUAL 证据进同一本签收台账，
+   逐行签收，全量签完护照才允许落库；签收台账单列在「签收台账」标签页。
+2. **只追加不覆盖**：reissue（换发）只追加新护照，旧护照标记为「已换发」并与旧
+   `output_contract` 并存；新版只登记本版新增的 field_rev 卡，不复制历史卡，历史按版本时间线回看。
+3. **同 version_no 一个 root**：同一编目条目同 `version_no` 的并发签发，进程内互斥串行，
+   只认第一个 root，后到请求直接拒绝。
+4. **断点续签**：事务启动先落 running 台账（含护照草稿），签收中断后台账原样保留；恢复只续
+   `signed=false` 的未签对象，草稿原样落库，禁止重新计算拼出半新半旧章。表单与停用操作都提供
+   「模拟断点」开关，种子数据自带一本 running 台账可直接演练。
+5. **以编目检索为主对象**：目录命中视图始终以 catalog 条目为主行，护照与断点台账作为附挂信息；
+   护照详情抽屉内置 name/layer/tag/path 的「快照 vs 现值」核对。所有列表按稳定键排序，同条件
+   多次检索结果顺序一致。
+
+护照库使用独立 localStorage key（`data-layer-studio:catalog-passports`），与条目库
+（`data-layer-studio:entries`）互不影响；护照页「重置护照库」只回滚护照数据。
 
 ## 约定
 
@@ -67,8 +95,12 @@ npm run build
   `frontend/src/api/local-service.ts`。
 - 字段、状态、动作与流转目标集中在 `frontend/src/data/modules.ts`；示例数据在
   `frontend/src/data/seed.ts`。
-- 状态流转只允许在 `local-service.ts` 里改，页面组件不做业务判断。
-- 想回到初始数据：清掉浏览器里 `data-layer-studio:entries` 这一项，或调用 `resetModule(模块)`。
+- 目录护照是编目检索的独立子域：类型 `data/passport-types.ts`、种子 `data/passport-seed.ts`、
+  持久化 `data/passport-store.ts`、事务与检索服务 `api/passport-service.ts`，页面组件在
+  `views/catalog/components/`。
+- 状态流转只允许在 `local-service.ts` 里改，页面组件不做业务判断；护照事务同理，页面只调服务。
+- 想回到初始数据：清掉浏览器里 `data-layer-studio:entries` 这一项，或调用 `resetModule(模块)`；
+  护照库清 `data-layer-studio:catalog-passports`，或在编目检索页点「重置护照库」。
 
 领域：数据工程
 子方向：数仓与数据湖
